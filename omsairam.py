@@ -16,19 +16,25 @@ hands = mpHands.Hands(
 # Initialize video capture (webcam)
 cap = cv2.VideoCapture(0)
 
-# Specify the correct serial port for the Arduino (e.g., 'COM3', 'COM4' for Windows or '/dev/ttyUSB0' for Linux)
-arduino_port = 'COM6'  # Change this to the port your Arduino is connected to
-try:
-    # Establish a serial communication with the Arduino
-    arduino = serial.Serial(arduino_port, 9600, timeout=1)
-    time.sleep(2)  # Wait for the connection to establish
-except serial.SerialException:
-    print(f"Could not open port {arduino_port}. Please check the connection and the port.")
+# Automatically detect and connect to Arduino
+arduino_port = None
+for port in ['COM3', 'COM4', 'COM5', 'COM6', 'COM7', '/dev/ttyUSB0', '/dev/ttyACM0']:
+    try:
+        arduino = serial.Serial(port, 9600, timeout=1)
+        time.sleep(2)  # Wait for the connection to establish
+        arduino_port = port
+        print(f"Connected to Arduino on {port}")
+        break
+    except serial.SerialException:
+        pass
+
+if not arduino_port:
+    print("Could not connect to Arduino. Please check the connection.")
     arduino = None
 
-# Flag to indicate if the left hand was detected in the previous frame
+# Variables for hand detection and communication
 left_hand_detected_previous = False
-distance_value = "No data"  # Variable to hold the distance value received from Arduino
+distance_value = "No data"
 
 while True:
     success, img = cap.read()
@@ -38,58 +44,61 @@ while True:
 
     display_text = ""
 
-    # Process detected hands
     if results.multi_hand_landmarks:
         left_hand_detected = False
+        right_hand_detected = False
 
-        # Check for left and right hands
+        # Identify hands
         for i, hand in enumerate(results.multi_handedness):
             label = MessageToDict(hand)['classification'][0]['label']
 
             if label == 'Left':
                 left_hand_detected = True
+            elif label == 'Right':
+                right_hand_detected = True
 
-        # If only left hand is detected, send signal to Arduino and update display text
-        if left_hand_detected:
+        # If only left hand is detected, prompt the user
+        if left_hand_detected and not right_hand_detected:
             display_text = "Please place your right hand before the arm"
-            
-            # If the left hand was not detected in the previous frame, send a signal to Arduino
-            if not left_hand_detected_previous and arduino:
-                arduino.write(b'1')  # Send '1' as a signal to Arduino
-                print("Signal sent to Arduino: 1")
 
-            # Try to read the distance value from the Arduino
-            if arduino and arduino.in_waiting > 0:  # Check if there's data to read
+            # Send signal only once when the left hand is first detected
+            if not left_hand_detected_previous and arduino:
                 try:
-                    distance_value = arduino.readline().decode('utf-8').strip()  # Read and decode the distance value
+                    arduino.write(b'1')  # Send signal to Arduino
+                    print("Signal sent to Arduino: 1")
+                except serial.SerialException:
+                    print("Error: Failed to send signal to Arduino.")
+
+            # Read distance value from Arduino
+            if arduino and arduino.in_waiting > 0:
+                try:
+                    distance_value = arduino.readline().decode('utf-8').strip()
                     print(f"Distance: {distance_value} cm")
-                except:
-                    distance_value = "Error reading distance"  # Handle any exceptions while reading
-                    print("Failed to read distance value")
+                except Exception as e:
+                    distance_value = "Error reading distance"
+                    print(f"Failed to read distance value: {e}")
 
             left_hand_detected_previous = True
         else:
             left_hand_detected_previous = False
 
-    # Display the message and distance on the screen
+    # Display text and distance on the screen
     cv2.putText(img, display_text, (100, 50),
                 cv2.FONT_HERSHEY_COMPLEX,
                 0.9, (0, 255, 0), 2)
-
-    # Display the distance value
     cv2.putText(img, f"Distance: {distance_value} cm", (100, 100),
                 cv2.FONT_HERSHEY_COMPLEX,
                 0.9, (255, 0, 0), 2)
 
-    # Show the image
     cv2.imshow('Image', img)
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Release video capture and close all windows
+    time.sleep(0.05)  # Reduce CPU usage
+
 cap.release()
 cv2.destroyAllWindows()
 
-# Close the serial connection if it was established
 if arduino:
     arduino.close()
