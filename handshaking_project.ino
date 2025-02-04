@@ -1,49 +1,42 @@
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
 #include <Servo.h>
 
-Servo handshakeServo; // Define a servo for the handshake mechanism
-const int trigPin = 9; // Ultrasonic sensor trigger pin
-const int echoPin = 10; // Ultrasonic sensor echo pin
-const int servoPin = 6; // Servo motor control pin
-bool handshakeTriggered = false; // Prevent multiple activations
+// Create PWM driver object
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+
+// Servo definitions (change these as needed)
+#define BASE_SERVO_CHANNEL 0   // Base rotation servo (Channel 0 on PCA9685)
+#define SHOULDER_SERVO_CHANNEL 1   // Shoulder movement servo (Channel 1)
+#define ELBOW_SERVO_CHANNEL 2  // Elbow movement servo (Channel 2)
+#define WRIST_SERVO_PIN 9      // Wrist servo connected directly to Arduino pin 9
+
+// Ultrasonic sensor pins
+#define TRIG_PIN 6  // Trigger pin of the ultrasonic sensor
+#define ECHO_PIN 7  // Echo pin of the ultrasonic sensor
+
+Servo wristServo;  // Create Servo object for wrist
 
 void setup() {
-    Serial.begin(9600);
-    handshakeServo.attach(servoPin);
-    pinMode(trigPin, OUTPUT);
-    pinMode(echoPin, INPUT);
-    handshakeServo.write(0); // Set servo to initial position
-}
+  // Initialize serial communication
+  Serial.begin(9600);
 
-long measureDistance() {
-    digitalWrite(trigPin, LOW);
-    delayMicroseconds(2);
-    digitalWrite(trigPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trigPin, LOW);
+  // Initialize PWM driver and set frequency to 50 Hz (for servo control)
+  pwm.begin();
+  pwm.setPWMFreq(50);
 
-    long duration = pulseIn(echoPin, HIGH);
-    long distance = duration * 0.034 / 2; // Convert to cm
-    return distance;
-}
+  // Attach the wrist servo to the specified pin
+  wristServo.attach(WRIST_SERVO_PIN);
 
-void loop() {
-    if (Serial.available() > 0) {
-        char receivedChar = Serial.read();
+  // Set the initial position of the servos
+  pwm.setPWM(BASE_SERVO_CHANNEL, 0, servoAngleToPWM(90));   // Base in the center
+  pwm.setPWM(SHOULDER_SERVO_CHANNEL, 0, servoAngleToPWM(90));   // Shoulder in the center
+  pwm.setPWM(ELBOW_SERVO_CHANNEL, 0, servoAngleToPWM(90));  // Elbow in the center
+  wristServo.write(90);  // Wrist in the center position
 
-        if (receivedChar == '1' && !handshakeTriggered) {
-            Serial.println("Hand detected, checking distance...");
+  // Initialize pins for the ultrasonic sensor
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
 
-            long distance = measureDistance();
-            Serial.println(distance); // Send distance to Python
-
-            if (distance > 5 && distance < 20) { // Distance range for handshake
-                Serial.println("Initiating handshake...");
-                handshakeServo.write(90); // Move servo to handshake position
-                delay(1000);
-                handshakeServo.write(0); // Reset servo
-                handshakeTriggered = true; // Prevent repeated handshakes
-            }
-        }
-    }
-    delay(100); // Small delay for stability
+  Serial.println("System ready. Waiting for signal...");
 }
