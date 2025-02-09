@@ -41,7 +41,7 @@ void setup() {
   Serial.println("System ready. Waiting for signal...");
 }
 void loop() {
-  // Check for incoming serial data from the laptop
+  // Check for incoming serial data from the lapto
   if (Serial.available() > 0) {
     char signal = Serial.read();
 
